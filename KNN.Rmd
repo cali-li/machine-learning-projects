@@ -1,0 +1,161 @@
+---
+title: "STATS503 HW1"
+author: "Wenjing Li"
+date: "1/29/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+
+## (a) The sample size $n$ is extremely large, and the number of predictors $p$ is small.
+
+Since the sample size is large, we actually have enough data to get a more acurrate model. In this case, the number of predictors is relatively small compared to the number of the whole data set, so the performance of a flexible statistical learning method is better than an inflexible method. This is because the large data set makes the variance term relatively small, increasing the complexity of the model can help reduce the bias term.
+
+## (b) The number of predictors $p$ is extremely large, and the number of observations $n$ is small.
+
+Since the number of predictors is relatively large compared to the number of the whole data set, it could be better to use a less complexible model and reduce the variance term. In this case, the performance of a flexible statistical learning method is worse than an inflexible method.
+
+## (c) The relationship between the predictors and response is highly non-linear.
+
+Since the relationship is non-linear, using a simple linear model or even a qudratic model is not enough to describe the relationship between the response and the predictors. Simple models could have a extremely large bias term. In order to reduce the bias term, adding the model complexity is a good way. In this case, the performance of a flexible statistical learning method is better than an inflexible method.
+
+## (d) The variance of the error terms, i.e. $\sigma^2 = Var(e)$, is extremely high.
+Since the variance is extremely high, we need to reduce the varience term by reducing the complexity of the model. Though the bias term could increase, compared to the decrease of the variance term, the increase of the bias term is relatively small. In this case, the performance of a flexible statistical learning method is worse than an inflexible method.
+
+\pagebreak
+
+# Question 2
+
+In this problem, we use a diabetes data set and try to create models using KNN algorithm.
+
+```{r,echo=FALSE, warning=FALSE, message=FALSE}
+# load packages
+library(class)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+```
+
+## Data Manipulation
+
+```{r}
+
+## upload training data and check data
+dat = read.csv("C:/Users/wenji/Downloads/STATS 503/HW1/diabetes_train.csv")
+dat$Outcome = factor(dat$Outcome > 1/2)
+levels(dat$Outcome) = c("not having diabetes", "having diabetes")
+summary(dat)
+
+## upload test data and check data
+dat_test = read.csv("C:/Users/wenji/Downloads/STATS 503/HW1/diabetes_test.csv")
+dat_test$Outcome = factor(dat_test$Outcome > 1/2)
+levels(dat_test$Outcome) = c("not having diabetes", "having diabetes")
+summary(dat_test)
+
+```
+
+### Training data set:
+ 
+There is no missing data. However, some data in the data set is impossible. Like no one could live with no glucose or insulin in his or her body. Also, BMI and diastolic blood pressure are impossible to be 0. Based on above, I omit all the false data, in case those data could make the model become less accurate.
+
+Although it also looks very rare that people can get pregnant in 17 times, we don't have enough clue to delete these data.
+
+### Test data set:
+
+For the test data set, we use the same process to manipulate data.
+
+```{r}
+dat_clean = dat %>%
+  filter(Glucose != 0 & BloodPressure != 0 & Insulin != 0 & BMI != 0)
+summary(dat_clean)
+
+dat_test_clean = dat_test %>%
+  filter(Glucose != 0 & BloodPressure != 0 & Insulin != 0 & BMI != 0)
+summary(dat_test_clean)
+
+```
+
+### Generate plots using the cleaned data set
+
+```{r}
+
+## generate plot
+box1 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = Pregnancies)) 
+box2 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = Glucose)) 
+box3 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = BloodPressure)) 
+box4 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = SkinThickness)) 
+box5 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = Insulin)) 
+box6 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = BMI)) 
+box7 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = DiabetesPedigreeFunction)) 
+box8 = ggplot(dat_clean) + 
+  geom_boxplot(aes(x = Outcome, y = Age)) 
+grid.arrange(box1, box2, box3, box4, box5, box6, box7, box8, 
+             widths = c(4, 6))
+
+```
+
+From the box plots above, we can conclude that having diabetes or not highly related to the glucose concentration.
+
+## KNN model
+
+After dealing with the data set, we can start working on the KNN model.
+
+At first, select relative data from data set dat_clean and dat_test_clean
+```{r}
+
+## select data
+train_label = dat_clean %>% .$Outcome
+test_label = dat_test_clean %>% .$Outcome
+train_x = dat_clean %>%
+  select('Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI',
+         'DiabetesPedigreeFunction', 'Age')
+test_x = dat_test_clean %>%
+  select('Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI',
+         'DiabetesPedigreeFunction', 'Age')
+
+## scale training and test data in the same way
+mean_train = colMeans(train_x)
+std_train = sqrt(diag(var(train_x)))
+train_x = scale(train_x, center = mean_train, scale = std_train)
+test_x = scale(test_x, center = mean_train, scale = std_train)
+
+```
+
+Compute KNN model when k = 1, 2, 3, ..., 20 and get training error and test error respectively.
+
+```{r}
+
+k_range = c(1:20)
+train_error = c()
+test_error = c()
+for(i in 1:length(k_range)){
+  pred_train <- knn(train_x, train_x, train_label, k = k_range[i])
+  train_error[i] = mean(pred_train != train_label)
+  pred_test = knn(train_x, test_x, train_label, k = k_range[i])
+  test_error[i] = mean(pred_test != test_label)
+}
+
+## generate plot
+errors = data.frame(train_error, test_error, k_range)
+ggplot(errors, aes(x = k_range)) + 
+  geom_line(aes(y = train_error), col = "red") + 
+  geom_point(aes(y = train_error), col = "red") +
+  geom_line(aes(y = test_error), col = "blue") + 
+  geom_point(aes(y = test_error), col = "blue") +
+  ylab("Error Rate") + xlab("K") + 
+  ggtitle("Training and test error rate for KNN") + 
+  theme_minimal()
+```
