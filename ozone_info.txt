@@ -1,0 +1,4 @@
+Data frame with components: ozone, radiation, temperature, and wind.
+
+Measurements of daily ozone concentration (ppb), wind speed (mph), daily maximum temperature (degrees F), and solar radiation (langleys) on 111 days from May to September 1973 in New York.
+
