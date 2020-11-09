@@ -1,0 +1,40 @@
+---
+title: "Untitled"
+author: "Wenjing Li"
+date: "2/16/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 3
+
+### 3(a)
+
+```{r, warning=FALSE}
+#loads package
+library(ISLR)
+data(Weekly)
+
+#fit logistic model
+logistic_model = glm(Direction ~ Lag1 + Lag2, data = Weekly, family = binomial)
+summary(logistic_model)
+```
+
+
+### 3(b)
+
+```{r}
+#leave-the-first-one-out logistic model
+logistic_model_leave1 = glm(Direction ~ Lag1 + Lag2, data = Weekly[-1,], family = binomial)
+summary(logistic_model_leave1)
+```
+
+### 3(c)
+
+```{r}
+#predicts the direction of the first observation
+sum(logistic_model_leave1$coefficients*cbind(1,Weekly[1,2:3]))
+```
