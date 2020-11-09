@@ -1,0 +1,21 @@
+1. Title: MNIST database of handwritten digits
+
+2. Description:
+Dataset of 60,000 28x28 grayscale images of the 10 digits, along with a test set of 10,000 images.
+
+3. Format:
+Use the following R commands to restore the data in R
+
+load("mnist.Rdata")
+objects()
+
+You will now have access to the following objects:
+x_train      an array of grayscale image data for training with dimension (60,000, 28, 28)
+y_train      an array of digit labels (integers in the range of 0-9) with length (60,000). 
+x_test       an array of grayscale image data for testing with dimension (10,000, 28, 28)
+y_test       an array of digit labels (integers in the range of 0-9) with length (10,000).
+
+Then follow the steps in Lab 9 to preprocess the data so you can fit SVM and NN models.
+
+References
+Original dataset can be downloaded from dataset_mnist {keras}.
