@@ -1,0 +1,219 @@
+---
+title: "STATS - HW 4"
+author: "Wenjing Li"
+date: "3/12/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 2
+
+### 2(1)
+
+```{r,echo=FALSE, warning=FALSE}
+#loads data
+dat_train = read.csv("C:/Users/wenji/Downloads/STATS 503/HW4/bank_marketing_train.csv", header = TRUE)
+dat_test = read.csv("C:/Users/wenji/Downloads/STATS 503/HW4/bank_marketing_test.csv", header = TRUE)
+
+#factorize
+dat_train$deposit = factor(dat_train$deposit)
+dat_train$job = factor(dat_train$job)
+
+#loads package
+suppressMessages(suppressWarnings(library(rattle)))
+suppressMessages(suppressWarnings(library(rpart.plot)))
+suppressMessages(suppressWarnings(library(rpart)))
+suppressMessages(suppressWarnings(library(randomForest)))
+suppressMessages(suppressWarnings(library(gbm)))
+```
+
+Firstly, I used the gini method to fit the model and find the best cp value based on the cross vaildation generated from the "plotcp" function.
+
+```{r}
+prop = table(dat_train$deposit) / dim(dat_train)[1]
+w = rep(1/prop[2], dim(dat_train)[1])
+w[which(dat_train$deposit == "yes")] = 1/prop[1]
+
+set.seed(123)
+tree_gini = rpart(deposit ~ ., data = dat_train,
+                  parms = list(split = "gini"), method = "class", weights = w)
+plotcp(tree_gini)
+```
+
+The best cp value from the plot above is 0.015. Next, I used the training data set to fit the model and get a tree plot as below.
+
+```{r}
+set.seed(123)
+tree_gini = rpart(deposit ~ ., data = dat_train,
+                  parms = list(split = "gini"), method = "class", cp = 0.015, weights = w)
+fancyRpartPlot(tree_gini)
+```
+
+The tree model contains 7 terminal nodes. Then, I computed the tesing error of the model.
+
+```{r}
+tree_pred = predict(tree_gini, dat_test, type = "class")
+table(tree_pred, dat_test$deposit)
+```
+
+Of all the 'no' clients of the test set, 16.36 percentage was misclassified and of all the 'yes' clients of the test set, 21.04 percentage was misclassified as 'no'.
+
+And the overall testing error can be computed as:
+
+```{r}
+sum(tree_pred != dat_test$deposit) / dim(dat_test)[1]
+```
+
+So the gini method give us a model with testing error as 0.1872.
+
+However, using the info seems give us a better model as below.
+
+```{r}
+set.seed(123)
+tree.info = rpart(deposit ~ ., data = dat_train,
+                  parms = list(split = "information"), cp = 0.016, weights = w)
+fancyRpartPlot(tree.info)
+train.pred = predict(tree.info, dat_test, type="class", cp = 0.016)
+sum(train.pred != dat_test$deposit) / dim(dat_test)[1]
+```
+
+```{r}
+#create the error table
+table(train.pred, dat_test$deposit)
+```
+
+Of all the 'no' clients of the test set, 20.39 percentage was misclassified and of all the 'yes' clients of the test set, 21.60 percentage was misclassified as 'no'. And the testing error is 0.2096.
+
+### 2(2)
+
+Using the best model from the task one and get the subtree as below.
+
+```{r}
+#another method:
+#tree.info1 <- prp(tree.info,snip=TRUE)$obj
+#prp(tree.info1)
+#however, the method above need interactive which is hard to complish in markdown file
+#use the method below
+#
+fancyRpartPlot(tree_gini)
+```
+
+From the subplot, the variables that are used in this model are: duration, poutcome, month, housing, day. There variables tend to be more important and useful to split training data nodes.
+
+### 2(3)
+
+**Step 1:**
+
+Since we evaluate the model based on error(accuracy) instead of AUC, then this is a good way to tune a model, as the selection considers (OOB) error.
+
+```{r}
+#random forest - choose parameter value
+set.seed(123)
+mytry <- tuneRF(dat_train[,-17], dat_train[,17], stepFactor = 1.5, weights=w)
+```
+
+From the plot above, I am going to choose 6 as mtry value since it is reasonablely small.
+
+**Step 2:**
+
+Build the random forest model.
+
+* ntree: Number of trees to grow. We need a large number to make sure the input gets predicted. With the increasement of the value of ntree, the error for beth type tends to become smaller and become stable. However, we usually choose ntree = 500, since larger trees work better and become more computational-consuming.
+
+* mtry: Number of variables randomly sampled as candidates at each split. mtry larger, the model tends to become more complicated, and the testing error tends to be smaller at first and then larger until the end. The error of "no" becomes smaller at first and then tends to be larger, while the error of "yes" continously becomes "larger".
+
+* nodezise: Minimum size of terminal nodes. Setting this number larger causes smaller trees to be grown and that helps to reduce the effect of overfitting. If the value of nodesize become larger, the model tends to avoid overfitting at first, and then becomes underfitting if the value of nodesize is large enough. So with the nodesize becoming larger, the error tends to decrease at first and then increase. The error of "no" becomes larger, as well as the error of "yes" becomes smaller at first and then becomes larger as well.
+
+```{r}
+set.seed(123)
+rf_train = randomForest(deposit ~ ., data = dat_train, mtry = 6, importance = TRUE, nodesize=5, weights=w)
+importance(rf_train)
+```
+
+From the MeanDecreaseAccuracy, we can get the top five most important variables are: duration, month, contact, day and poutcome, which is similar to the result from the tree(info) model. And we can take a look at the importance plot:
+
+```{r}
+varImpPlot(rf_train)
+```
+
+**Step 3:**
+
+Evaluate on the test data.
+
+```{r}
+rf_pred = predict(rf_train, newdata = dat_test)
+table(rf_pred, dat_test$deposit)
+```
+
+Of all the 'no' clients of the test set, 11.06 percentage was misclassified and of all the 'yes' clients of the test set, 17.63 percentage was misclassified as 'no'.
+
+```{r}
+mean(rf_pred != dat_test$deposit)
+```
+
+The testing error is 0.1436.
+
+### 2(3)
+
+We can use the logit boosting as the first glance.
+
+```{r}
+#boosting
+##process data
+dat_train$deposit = ifelse(dat_train$deposit == "yes", 1, 0)
+dat_test$deposit = ifelse(dat_test$deposit == "yes", 1, 0)
+
+##build model
+set.seed(123)
+logit_spam = gbm(deposit ~ ., data = dat_train, distribution = "bernoulli", 
+                 n.trees = 1000, interaction.depth = 3, shrinkage = 0.1, weights=w)
+logit_pred_response = predict(logit_spam, newdata = dat_test,
+                              n.trees = 1000, 
+                              type = "response")
+logit_pred = ifelse(logit_pred_response > 0.5, 1, 0)
+table(logit_pred, dat_test$deposit)
+mean(logit_pred != dat_test$deposit)
+```
+
+Then we can use the AdaBoost method and see if this method can give us a better result.
+
+* interaction.depth: the maximum depth of each tree. With a larger interaction.depth, the model becomes more accurate. So the errors for both types become smaller at first, and then the errors gradually become larger since the model tends to be overfitting.
+
+* shrinkage: the learning rate. A smaller learning rate typically requires more trees. With a larger shrinkage, the errors become smaller at first and then tends to be larger if the shrinkage is large enough.
+
+* n.trees: the total number of trees to fit. With a larger n.trees, the model becomes more accurate. So the errors for both types become smaller at first, and then the errors gradually become larger since the model tends to be overfitting.
+
+```{r}
+#build the AdaBoost model
+set.seed(123)
+ada_train = gbm(deposit ~ ., data = dat_train,
+                distribution = "adaboost", n.trees = 5000, 
+                interaction.depth = 3, weights=w)
+summary(ada_train)
+```
+
+From the influence plot above, we can find the variable "job" has a great influence as 11.83. The variable "poutcome" has a middle class influence as 4.62 while the "housing" has a small influence as 1.51. The influence result is reasonable since whether a person has deposit or not depends more on his job other than whether he has housing loan or not. And from the chart above, we can find the top five variables are: duration, month, job, balance and age, which is also similar to the result above, though the variable "balance" tends to be more important here.
+
+Next, I am going to evaluate on the testing data:
+
+```{r}
+ada_pred = predict(ada_train, newdata = dat_test,
+                   n.trees = 5000, type = "response")
+ada_pred = ifelse(ada_pred > 0.5, 1, 0)
+table(ada_pred, dat_test$deposit)
+mean(ada_pred != dat_test$deposit)
+```
+
+Of all the 'no' clients of the test set, 13.73 percentage was misclassified and of all the 'yes' clients of the test set, 16.37 percentage was misclassified as 'no'. And the testing error is 0.1502.
+
+We summarize some representative models testing error results in below:
+
+* tree(info): 0.1872
+* random forest: 0.1436
+* logit boosting: 0.1439
+* adaboost: 0.1502
+
+To wrap up, the best model is logit boosting.
