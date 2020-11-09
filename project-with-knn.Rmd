@@ -1,0 +1,298 @@
+---
+title: "Untitled"
+author: "Wenjing Li"
+date: "3/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+#loads data
+data = read.csv("C:/Users/wenji/Downloads/Data/Data/Aud/Minus100_aggregated.csv",
+                      header = TRUE)
+vertices = read.csv("C:/Users/wenji/Downloads/Data/Data/MergeKeys.csv",
+                      header = TRUE)
+suppressMessages(suppressWarnings(library(e1071)))
+suppressMessages(suppressWarnings(library(keras)))
+suppressMessages(suppressWarnings(library(tensorflow)))
+suppressMessages(suppressWarnings(library(dplyr)))
+suppressMessages(suppressWarnings(library(tidyverse)))
+suppressMessages(suppressWarnings(library(tidyr)))
+suppressMessages(suppressWarnings(library(ggplot2)))
+suppressMessages(suppressWarnings(library(class)))
+suppressMessages(suppressWarnings(library(MASS)))
+suppressMessages(suppressWarnings(library(rattle)))
+suppressMessages(suppressWarnings(library(rpart.plot)))
+suppressMessages(suppressWarnings(library(rpart)))
+suppressMessages(suppressWarnings(library(randomForest)))
+suppressMessages(suppressWarnings(library(gbm)))
+```
+
+
+```{r}
+## Function to preprocess and merge the data 
+data_pre = function(data,vertices,vertex_loc,freq){
+  ## Rename column names appropriately 
+  colnames(vertices) = c("Vertex", "MergeKey", "STG.label")
+  
+  ## Choose electrodes that are present only in specific regions of the STG (refer to data description document)
+  loc_vertices = vertices[vertices$STG.label==vertex_loc,]
+  
+  ## Choose frequency levels only in a specific frequency range (Refer to data description document)
+  hg_data = data[data$Freq_band==freq,]
+  hg_data = data[data$Label!="NA",]
+  
+  ## Merge the data file with corresponding vertex locations (Refer to data description document)
+  merged_data = loc_vertices%>% 
+    left_join(hg_data, by = "MergeKey")
+  
+  ## Drop columns that are not required
+  merged_data = merged_data[complete.cases(merged_data),]
+  merged_data= subset(merged_data, select=-c(MergeKey,
+                                             STG.label,
+                                             Test_Condition,
+                                             Freq_band))
+  merged_data = merged_data[!merged_data$Label=="#N/A",]
+  ## Convert categoricals into numeric
+  merged_data = merged_data[complete.cases(merged_data),]
+  merged_data$Subject_ID = as.numeric(factor(merged_data$Subject_ID))
+  merged_data$Electrode_name = as.numeric(factor(merged_data$Electrode_name))
+  merged_data$Label = as.numeric(factor(merged_data$Label))
+  merged_data$ERSP_value = as.numeric(merged_data$ERSP_value)
+  return(merged_data)
+}
+
+merged_audzero = data_pre(data, vertices, "Posterior", "hg")
+### Split into train/test sets
+smp_size = floor(0.70 * nrow(merged_audzero))
+train_ind = sample(seq_len(nrow(merged_audzero)), size = smp_size)
+min100_train = merged_audzero[train_ind, ]
+min100_test = merged_audzero[-train_ind, ]
+
+min100_train = min100_train[3:6]
+min100_test = min100_test[3:6]
+```
+
+## Data Visualization
+
+```
+pairs(min100_train, col=c("blue", "green","red")[min100_train$Label], 
+      pch=c(1,2,3)[min100_train$Label])
+par(xpd=TRUE)
+legend(0.34, 0.71, as.vector(unique(min100_train$Label)), 
+       col=c("blue", "green", "red"), pch=1:3, cex = 0.5)
+```
+
+## LDA
+
+```{r}
+lda = lda(Label ~ ., data = min100_train)
+lda_train_pred = predict(lda, min100_train)$class
+train_err = mean(lda_train_pred != min100_train$Label)
+lda_test_pred = predict(lda, min100_test)$class
+test_err = mean(lda_test_pred != min100_test$Label)
+```
+
+## QDA
+
+```{r}
+##trains QDA model using training data
+qda = qda(Label ~ ., data = min100_train) 
+
+##tests QDA model using testing data and training data
+qda_train_pred = predict(qda, min100_train)$class
+qda_test_pred = predict(qda, min100_test)$class
+qda_train_err = mean(qda_train_pred != min100_train$Label)
+qda_test_err = mean(qda_test_pred != min100_test$Label)
+```
+
+## Naive Bayes
+
+```{r}
+##trains NB model using training data
+NBclassfier = naiveBayes(Label ~ ., data = min100_train)
+
+##tests NB model using testing data and training data
+nb_train_pred = predict(NBclassfier, newdata = min100_train)
+nb_test_pred = predict(NBclassfier, newdata = min100_test)
+nb_train_err = mean(nb_train_pred != min100_train$Label)
+nb_test_err = mean(nb_test_pred != min100_test$Label)
+```
+
+## KNN - don't use
+
+```
+set.seed(123)
+##subset
+min100_ba = which(min100_train$Label == "1")
+min100_da = which(min100_train$Label == "2")
+min100_ga = which(min100_train$Label == "3")
+train_id_train = c(sample(min100_ba, size = trunc(300)),
+             sample(min100_da, size = trunc(300)),
+             sample(min100_ga, size = trunc(300)))
+min100_train_knn = min100_train[train_id_train, ]
+train_label = min100_train_knn$Label 
+train_x = min100_train_knn %>% select('Electrode_name')
+#train_label = min100_train_knn[4]
+test_x = min100_test[-4]
+test_label = min100_test$Label
+
+mean_train = colMeans(train_x)
+std_train = sqrt(diag(var(train_x)))
+# training data
+train_x = scale(train_x, center = mean_train, scale = std_train)
+# test data
+test_x = scale(test_x, center = mean_train, scale = std_train)
+
+set.seed(1)
+pred_train = knn(train_x, train_x, train_label, k = 1)
+
+pred_test = knn(train_x, test_x, test_label, k = 1)
+
+k_range = c(50, 100, 500, 1000, 5000)
+train_error = c()
+test_error = c()
+for(i in 1:length(k_range)){
+  pred_train <- knn(train_x, 
+               train_x, 
+               train_label, 
+               k = k_range[i])
+  train_error[i] = mean(pred_train != train_label)
+  pred_test = knn(train_x, 
+               test_x, 
+               test_label, 
+               k = k_range[i])
+  test_error[i] = mean(pred_test != test_label)
+}
+```
+
+## Tree
+
+```{r}
+
+set.seed(123)
+tree_gini = rpart(Label ~ ., data = min100_train,
+                  parms = list(split = "gini"), method = "class")
+plotcp(tree_gini)
+set.seed(123)
+tree_gini = rpart(Label ~ ., data = min100_train,
+                  parms = list(split = "gini"), method = "class", cp = 0.01)
+#fancyRpartPlot(tree_gini)
+tree_test_pred = predict(tree_gini, min100_test, type = "class")
+tree_test_err = mean(tree_test_pred != min100_test$Label)
+tree_train_pred = predict(tree_gini, min100_train, type = "class")
+tree_train_err = mean(tree_train_pred != min100_train$Label)
+```
+
+## SVM
+
+```{r}
+library(e1071)
+
+#subset of the training dataset
+set.seed(123)
+train_1 <- as.matrix(min100_train[-4])
+test_1 <- as.matrix(min100_test[-4])
+
+train_labels = min100_train[4]
+test_labels = min100_test[4]
+
+min100_ba = which(min100_train$Label == "1")
+min100_da = which(min100_train$Label == "2")
+min100_ga = which(min100_train$Label == "3")
+train_id_train = c(sample(min100_ba, size = trunc(300)),
+             sample(min100_da, size = trunc(300)),
+             sample(min100_ga, size = trunc(300)))
+
+train_dat = data.frame(train_labels[train_id_train,], train_1[train_id_train, ])
+colnames(train_dat)[1] = "labels"
+
+test_dat = data.frame(test_labels, test_1)
+colnames(test_dat)[1] = "labels"
+
+train_dat$labels = as.factor(train_dat$labels )
+test_dat$labels = as.factor(test_dat$labels )
+
+#fit model
+tc = tune.control(cross=5)
+tune.out =tune(svm, labels~., data= na.omit(train_dat), ranges=list(gamma = c(0.1,0.5),degree=c(1,2,3),cost=c(0.1,1,10),kernel=c("linear", "radial")))
+summary(tune.out)
+
+test_pred = predict(tune.out$best.model, newdata = min100_test)
+svm_test_err = mean(test_pred != min100_test$Label)
+train_pred = predict(tune.out$best.model, newdata = min100_train)
+svm_train_err = mean(train_pred != min100_train$Label)
+```
+
+## RF
+
+```{r}
+##subset of the data
+set.seed(123)
+min100_ba = which(min100_train$Label == "1")
+min100_da = which(min100_train$Label == "2")
+min100_ga = which(min100_train$Label == "3")
+train_id_train = c(sample(min100_ba, size = trunc(300)),
+             sample(min100_da, size = trunc(300)),
+             sample(min100_ga, size = trunc(300)))
+min100_train_rf = min100_train[train_id_train, ]
+
+##select mytry
+#min100_train_rf$Label=as.factor(min100_train_rf$Label)
+#mytry <- tuneRF(min100_train_rf[,-4], min100_train_rf[,4], stepFactor = 1.5)
+#mytry = 1
+rf_train = randomForest(Label ~ ., data = min100_train_rf, mtry = 1)#,
+                        #importance = TRUE, nodesize=5)
+importance(rf_train)
+rf_pred = predict(rf_train, newdata = min100_test)
+rf_test_err = mean(rf_pred != min100_test$Label)
+rf_pred_train = predict(rf_train, newdata = min100_train)
+rf_train_err = mean(rf_pred_train != min100_train_svm$Label)
+```
+
+## NN
+
+```{r}
+model_fashion <- keras_model_sequential()
+model_fashion %>%
+  layer_flatten(input_shape = c(1, 4)) %>%
+  layer_dense(units = 128, activation = 'relu') %>%
+  layer_dense(units = 4, activation = 'softmax')
+model_fashion %>% compile(
+  optimizer = 'adam', 
+  loss = 'sparse_categorical_crossentropy',
+  metrics = c('accuracy')
+)
+MLP.history = model_fashion %>% 
+  fit(as.matrix(min100_train[-4]), as.matrix(min100_train[4]), epochs = 30, 
+      validation_split = 0.2, batch_size = 32)
+plot(MLP.history) + theme_minimal()
+
+##evaluate
+score.mlp <- model_fashion %>% evaluate(as.matrix(min100_train[-4]), as.matrix(min100_train[4]))
+nn_train_err = 1 - score.mlp$acc
+score.mlp <- model_fashion %>% evaluate(as.matrix(min100_test[-4]), as.matrix(min100_test[4]))
+nn_test_err = 1 - score.mlp$acc
+
+```
+
+## Summary
+
+```{r, echo=FALSE}
+##create table
+table_error = c(train_err, test_err,
+                qda_train_err, qda_test_err,
+                nb_train_err, nb_test_err,
+                tree_train_err, tree_test_err,
+                svm_train_err, svm_test_err,
+                rf_train_err, rf_test_err,
+                nn_train_err, nn_test_err)
+dim(table_error) = c(2,7)
+colnames(table_error) = c("LDA", "QDA", "NB","Tree(gini)", "SVM", "RF", "NN")
+rownames(table_error) = c("Training Error", "Testing Error")
+cap = paste("*Testing and Training Error for 7 Methods*")
+knitr::kable(table_error, caption = cap)
+```
